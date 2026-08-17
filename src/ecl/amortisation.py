@@ -76,7 +76,16 @@ def annuity_payment(principal: float, rate_m: float, term_months: int) -> float:
     Raises:
         ValueError: If term_months is not positive or principal is negative.
     """
-    raise NotImplementedError
+    if term_months <= 0:
+        raise ValueError(f"term_months must be positive, got {term_months}")
+    if principal < 0:
+        raise ValueError(f"principal must be non-negative, got {principal}")
+
+    if np.isclose(rate_m, 0.0):
+        return principal / term_months
+
+    denominator = 1.0 - (1.0 + rate_m) ** (-term_months)
+    return principal * rate_m / denominator
 
 
 def outstanding_balance(
@@ -138,4 +147,15 @@ def outstanding_balance(
     Returns:
         Outstanding principal, matching the shape of periods_elapsed.
     """
-    raise NotImplementedError
+    t = np.asarray(periods_elapsed, dtype=np.float64)
+    remaining = np.clip(term_months - t, 0.0, None)
+
+    if np.isclose(rate_m, 0.0):
+        payment = principal / term_months
+        balance = payment * remaining
+    else:
+        payment = annuity_payment(principal, rate_m, term_months)
+        balance = payment * (1.0 - (1.0 + rate_m) ** (-remaining)) / rate_m
+
+    balance = np.where(remaining <= 0.0, 0.0, balance)
+    return float(balance) if np.isscalar(periods_elapsed) else balance
