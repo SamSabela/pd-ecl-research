@@ -1,0 +1,134 @@
+# =============================================================================
+# Leakage exclusion register - Section 3.5.1, Table 3.4
+#
+# The Lending Club file records the full life of each loan, not merely its
+# state at origination. Fields describing payments received, outstanding
+# principal, recoveries, settlement activity and hardship arrangements are
+# populated AFTER origination and are direct consequences of the outcome being
+# predicted. A model given access to them will discriminate almost perfectly
+# and will have learned nothing about credit risk.
+#
+# Because such a result LOOKS LIKE SUCCESS, this is the single most dangerous
+# failure mode in the pipeline. This register is the primary control.
+#
+# Second control: an automated screen computes the univariate AUC of every
+# admitted feature against the outcome and flags anything above 0.90 for
+# manual review. The register can only exclude what was anticipated; the
+# screen catches what was not.
+# =============================================================================
+
+exclusions:
+
+  payment_history:
+    reason: >
+      Populated after origination; these fields describe how the loan actually
+      performed and are therefore direct functions of the outcome.
+    fields:
+      - total_pymnt
+      - total_pymnt_inv
+      - total_rec_prncp
+      - total_rec_int
+      - total_rec_late_fee
+      - out_prncp
+      - out_prncp_inv
+      - last_pymnt_d
+      - last_pymnt_amnt
+      - next_pymnt_d
+
+  loss_and_recovery:
+    reason: >
+      Only populated for loans that have already defaulted. Including them
+      makes the target trivially recoverable from the features.
+    fields:
+      - recoveries
+      - collection_recovery_fee
+      - debt_settlement_flag
+      - debt_settlement_flag_date
+      - settlement_status
+      - settlement_date
+      - settlement_amount
+      - settlement_percentage
+      - settlement_term
+
+  distress_arrangements:
+    reason: >
+      Recorded only where an account entered distress, which is itself a
+      near-perfect proxy for the outcome.
+    field_patterns:
+      - "hardship_*"
+    fields:
+      - deferral_term
+      - payment_plan_start_date
+      - orig_projected_additional_accrued_interest
+
+  post_origination_bureau_refresh:
+    reason: >
+      Reflect the borrower's credit standing at a date after origination, not
+      at application. Admitting them imports information the lender would not
+      have had at decision time.
+    fields:
+      - last_credit_pull_d
+      - last_fico_range_high
+      - last_fico_range_low
+      - mths_since_last_major_derog
+      - collections_12_mths_ex_med
+
+  funding_process:
+    reason: Determined after the application decision rather than at application.
+    fields:
+      - funded_amnt
+      - funded_amnt_inv
+      - pymnt_plan
+
+  identifiers_and_free_text:
+    reason: No modelling value, or unstructured text outside this study's scope.
+    fields:
+      - id
+      - member_id
+      - url
+      - desc
+      - title
+      - emp_title
+
+  platform_risk_assessment:
+    reason: >
+      PRIMARY SPECIFICATION EXCLUSION. These encode Lending Club's own risk
+      model, which was itself fitted to predict default. Including them means
+      benchmarking against the platform's scorecard rather than estimating PD
+      from borrower characteristics, and inflates measured discrimination for
+      reasons unrelated to the model families being compared. Much published
+      work on this dataset does not exclude them.
+
+      int_rate is retained in the dataset but used ONLY for exposure
+      amortisation and discounting in the ECL engine, never as a model input.
+    fields:
+      - grade
+      - sub_grade
+      - int_rate
+
+# -----------------------------------------------------------------------------
+# Retained for operational use, never admitted to the modelling matrix
+# -----------------------------------------------------------------------------
+retained_with_justification:
+  - field: int_rate
+    use: "ECL discounting and contractual amortisation only"
+    excluded_from_modelling: true
+  - field: loan_status
+    use: "Outcome variable construction only, per Table 3.2"
+    excluded_from_modelling: true
+  - field: issue_d
+    use: "Out-of-time partitioning and macroeconomic merge key"
+    excluded_from_modelling: true
+  - field: term
+    use: "Maturity filter and ECL amortisation schedule"
+    excluded_from_modelling: true
+  - field: addr_state
+    use: "Fairness proxy segmentation; also admissible as a model feature"
+    excluded_from_modelling: false
+
+automated_screen:
+  univariate_auc_threshold: 0.90
+  action: "flag for manual review before modelling proceeds"
+  rationale: >
+    A single feature separating defaulters from non-defaulters that cleanly in
+    credit data is almost always leakage rather than signal.
