@@ -27,13 +27,20 @@ Maturity filter (3.4.2)
     representative sample of outcomes. But do not assume the sign, and if it
     comes out negative, the wording in 3.4.2 needs revising before submission.
 
-YOUR TASK
----------
-Implement the three functions marked TODO. Read tests/test_sample.py first -
-the worked arithmetic in the test docstrings tells you exactly what each must
-produce.
+Empirical note (profiled 26 August 2026, 2,260,701 rows)
+    Fully Paid   1,076,751   47.6%
+    Current        878,317   38.9%   excluded, unresolved
+    Charged Off    268,559   11.9%
+    Late/Grace      34,252    1.5%   excluded, unresolved
+    Credit policy    2,749    0.1%   excluded
+    Default             40    0.0%
 
-    pytest tests/test_sample.py -v
+    Resolved sample 1,345,350 (59.5% of file); raw default rate 19.96%.
+
+    Note that "Default" as a status is vanishingly rare - Lending Club's
+    default event is in practice the charge-off. Both are retained in the
+    definition because both are resolved adverse outcomes, but the write-up
+    should say so rather than leave a reader wondering.
 """
 
 from __future__ import annotations
@@ -146,7 +153,10 @@ def parse_term_months(term: pd.Series) -> pd.Series:
     Returns:
         Nullable integer series of months.
     """
-    raise NotImplementedError
+    if pd.api.types.is_numeric_dtype(term):
+        return term.astype("Int64")
+    extracted = term.astype("string").str.extract(r"(\d+)", expand=False)
+    return pd.to_numeric(extracted, errors="coerce").astype("Int64")
 
 
 def assign_outcome(
@@ -162,22 +172,6 @@ def assign_outcome(
     coercing them to non-default is precisely the contamination the maturity
     filter also guards against.
 
-    TODO: implement.
-
-    Steps:
-        1. Raise KeyError if status_col is absent. Message must contain the
-           column name.
-        2. Normalise: frame[status_col].astype("string").str.strip()
-        3. Identify credit-policy rows: .str.contains("does not meet the credit
-           policy", case=False, na=False)
-        4. If definition.exclude_credit_policy, drop them. If not, strip the
-           prefix so the underlying status is recovered - otherwise the option
-           does nothing, because "Does not meet the credit policy. Status:Fully
-           Paid" is not equal to "Fully Paid".
-        5. Build boolean masks with .isin() against the two status tuples.
-        6. Keep only rows where one of them is true.
-        7. Return a copy with target_col added as int8: 1 for default, 0 for not.
-
     Args:
         frame: Raw loan data.
         definition: The outcome mapping.
@@ -190,7 +184,33 @@ def assign_outcome(
     Raises:
         KeyError: If the status column is absent.
     """
-    raise NotImplementedError
+    if status_col not in frame.columns:
+        raise KeyError(f"status column '{status_col}' not in frame")
+
+    status = frame[status_col].astype("string").str.strip()
+    is_credit_policy = status.str.contains(
+        "does not meet the credit policy", case=False, na=False
+    )
+
+    if definition.exclude_credit_policy:
+        keep_policy = ~is_credit_policy
+    else:
+        # Retaining these rows is only meaningful if the underlying status is
+        # recovered from the prefixed label. "Does not meet the credit policy.
+        # Status:Fully Paid" is not equal to "Fully Paid", so a plain .isin()
+        # would drop it anyway and the option would silently do nothing.
+        keep_policy = pd.Series(True, index=frame.index)
+        status = status.str.replace(
+            r"^Does not meet the credit policy\.\s*Status:\s*", "", regex=True
+        ).str.strip()
+
+    is_default = status.isin(definition.default_statuses)
+    is_non_default = status.isin(definition.non_default_statuses)
+    resolved = (is_default | is_non_default) & keep_policy
+
+    out = frame.loc[resolved].copy()
+    out[target_col] = is_default.loc[resolved].astype("int8")
+    return out
 
 
 def apply_maturity_filter(
@@ -205,23 +225,6 @@ def apply_maturity_filter(
     With a data cutoff at end-2018 this admits 36-month loans originated up to
     and including December 2015, and 60-month loans up to December 2013.
 
-    TODO: implement.
-
-    Steps:
-        1. Raise KeyError if any of the three required columns is absent.
-        2. Parse dates: pd.to_datetime(frame[origination_col], errors="coerce")
-        3. Build a keep mask, starting all-False:
-               keep = pd.Series(False, index=frame.index)
-           For each (term_length, cutoff) in term_cutoffs, OR in the rows that
-           match that term AND originated on or before the cutoff.
-           Use .fillna(False) on the date comparison - a NaT comparison gives
-           NA, which breaks the boolean OR.
-        4. A term with no cutoff specified must NOT pass. Starting from all-False
-           gives you that for free.
-        5. Build and return the MaturityFilterResult, computing both default
-           rates and the retained origination window. Guard the empty case:
-           .mean() on an empty series is NaN, not 0.
-
     Args:
         frame: Loans with an outcome already assigned.
         term_cutoffs: {term_months: "YYYY-MM-DD"} latest admissible origination.
@@ -235,4 +238,30 @@ def apply_maturity_filter(
     Raises:
         KeyError: If a required column is absent.
     """
-    raise NotImplementedError
+    for column in (origination_col, term_col, target_col):
+        if column not in frame.columns:
+            raise KeyError(f"required column '{column}' not in frame")
+
+    origination = pd.to_datetime(frame[origination_col], errors="coerce")
+    term = frame[term_col].astype("Int64")
+
+    # Start all-False so that a term with no stated cutoff cannot pass. A loan
+    # whose maturity rule has not been specified is not admissible evidence.
+    keep = pd.Series(False, index=frame.index)
+    for term_length, cutoff in term_cutoffs.items():
+        matches_term = (term == int(term_length)).fillna(False)
+        within_window = (origination <= pd.Timestamp(cutoff)).fillna(False)
+        keep |= matches_term & within_window
+
+    filtered = frame.loc[keep].copy()
+    retained = origination.loc[keep]
+
+    return MaturityFilterResult(
+        frame=filtered,
+        rows_before=len(frame),
+        rows_after=len(filtered),
+        default_rate_before=float(frame[target_col].mean()) if len(frame) else 0.0,
+        default_rate_after=float(filtered[target_col].mean()) if len(filtered) else 0.0,
+        origination_min=retained.min() if len(filtered) else None,
+        origination_max=retained.max() if len(filtered) else None,
+    )
