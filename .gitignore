@@ -19,3 +19,5 @@ __pycache__/
 
 .env
 kaggle.json
+
+.DS_Store
