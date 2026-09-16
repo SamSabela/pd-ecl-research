@@ -252,18 +252,18 @@ class RollingOriginResult:
             f"  Embargo        : {self.embargo_months} months",
             "",
             f"  {'fold':<8}{'train':>10}{'to':>10}{'dr':>9}"
-            f"{'eval':>10}{'window':>18}{'dr':>9}",
-            "  " + "-" * 68,
+            f"{'eval':>10}{'window':>22}{'dr':>9}",
+            "  " + "-" * 78,
         ]
         for f in self.folds:
             window = f"{f.evaluate_start:%Y-%m} to {f.evaluate_end:%Y-%m}"
             lines.append(
                 f"  {f.name:<8}{f.train_rows:>10,}{f'{f.train_end:%Y-%m}':>10}"
                 f"{f.train_default_rate:>9.2%}"
-                f"{f.evaluate_rows:>10,}{window:>18}"
+                f"{f.evaluate_rows:>10,}{window:>22}"
                 f"{f.evaluate_default_rate:>9.2%}"
             )
-        lines.append("  " + "-" * 68)
+        lines.append("  " + "-" * 78)
         lines.append("  Training windows expand; evaluation windows are disjoint and")
         lines.append("  contiguous. Every cohort after the first cut-off is scored once.")
         return "\n".join(lines)
@@ -340,8 +340,7 @@ def rolling_origin_folds(
         raise ValueError(
             f"{int(origination.isna().sum())} rows have an unparseable origination "
             "date; resolve before partitioning"
-        )
-        
+        )        
     boundaries = [
         (pd.Timestamp(train_end), pd.Timestamp(evaluate_end))
         for train_end, evaluate_end in fold_boundaries
@@ -353,7 +352,7 @@ def rolling_origin_folds(
                 f"{train_end:%Y-%m-%d} and end {evaluate_end:%Y-%m-%d}"
             )
 
-    for (earlier_end, _), (later_end, _) in zip(boundaries, boundaries[1:]):
+    for (earlier_end, _), (later_end, _) in zip(boundaries, boundaries[1:], strict=False):
         if later_end <= earlier_end:
             raise ValueError(
                 f"fold boundaries must be given in chronological order; training "
@@ -378,3 +377,40 @@ def rolling_origin_folds(
                 f"fold ending {evaluate_end:%Y} has an empty evaluation window "
                 f"covering {train_end:%Y-%m-%d} to {evaluate_end:%Y-%m-%d}"
             )
+
+        evaluate_dates = origination.loc[evaluate_mask]
+
+        folds.append(
+            Fold(
+                name=str(evaluate_end.year),
+                train=frame.index[train_mask],
+                evaluate=frame.index[evaluate_mask],
+                train_end=cutoff,
+                evaluate_start=evaluate_dates.min(),
+                evaluate_end=evaluate_dates.max(),
+                train_rows=int(train_mask.sum()),
+                evaluate_rows=int(evaluate_mask.sum()),
+                train_default_rate=float(frame.loc[train_mask, target_col].mean()),
+                evaluate_default_rate=float(frame.loc[evaluate_mask, target_col].mean()),
+            )
+        )
+        
+    diagnostics = pd.DataFrame(
+        [
+            {
+                "fold": f.name,
+                "train_end": f"{f.train_end:%Y-%m}",
+                "train_rows": f.train_rows,
+                "train_default_rate": f.train_default_rate,
+                "evaluate_start": f"{f.evaluate_start:%Y-%m}",
+                "evaluate_end": f"{f.evaluate_end:%Y-%m}",
+                "evaluate_rows": f.evaluate_rows,
+                "evaluate_default_rate": f.evaluate_default_rate,
+            }
+            for f in folds
+        ]
+    )
+
+    return RollingOriginResult(
+        folds=folds, embargo_months=embargo_months, diagnostics=diagnostics
+    )

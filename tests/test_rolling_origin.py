@@ -15,12 +15,10 @@ function would run anyway.
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from src.data.partition import Fold, RollingOriginResult, rolling_origin_folds
-
 
 FOLDS = [("2012-12-31", "2013-12-31"),
          ("2013-12-31", "2014-12-31"),
@@ -77,7 +75,7 @@ class TestFoldConstruction:
         shuffled = rolling_origin_folds(
             _monthly().sample(frac=1.0, random_state=17), FOLDS
         ).folds
-        for a, b in zip(ordered, shuffled):
+        for a, b in zip(ordered, shuffled, strict=True):
             assert sorted(a.train) == sorted(b.train)
             assert sorted(a.evaluate) == sorted(b.evaluate)
 
@@ -96,7 +94,7 @@ class TestTemporalIntegrity:
         discarding early cohorts would throw away the only crisis-era data in
         the sample."""
         folds = rolling_origin_folds(_monthly(), FOLDS).folds
-        for earlier, later in zip(folds, folds[1:]):
+        for earlier, later in zip(folds, folds[1:], strict=False):
             assert set(earlier.train).issubset(set(later.train))
             assert set(earlier.evaluate).issubset(set(later.train))
 
@@ -110,7 +108,7 @@ class TestTemporalIntegrity:
     def test_evaluation_windows_are_contiguous(self):
         """No cohort falls between two evaluation windows and goes unscored."""
         folds = rolling_origin_folds(_monthly(), FOLDS).folds
-        for earlier, later in zip(folds, folds[1:]):
+        for earlier, later in zip(folds, folds[1:], strict=False):
             gap = (later.evaluate_start - earlier.evaluate_end).days
             assert 0 < gap <= 31
 
