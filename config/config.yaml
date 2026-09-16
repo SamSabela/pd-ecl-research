@@ -48,17 +48,36 @@ sample:
     term_cutoffs:
       36: "2015-12-31"
       60: "2013-12-31"
+    # Primary sample scope - added 12 September 2026
+  # 60-month loans default at 25.16% against 13.90%, and the maturity filter
+  # admits them only to 2013, so term mix is confounded with calendar time.
+  term_scope:
+    primary_term_months: 36
+    robustness_term_months: 60
 
 # -----------------------------------------------------------------------------
-# Partitioning - Section 3.4.3 (purely out-of-time)
+# Partitioning - Section 3.4.3
+# Revised 12 September 2026: rolling-origin backtesting replaces the single
+# row-count out-of-time split. See the concept reference for the reasoning.
 # -----------------------------------------------------------------------------
 partition:
-  method: "out_of_time"
+  method: "rolling_origin"
   date_column: "issue_d"
-  train_share: 0.70
-  validation_share: 0.15
-  test_share: 0.15
   stratify_within_cv_folds: true
+
+  rolling_origin:
+    folds:
+      - {train_end: "2012-12-31", evaluate_end: "2013-12-31"}
+      - {train_end: "2013-12-31", evaluate_end: "2014-12-31"}
+      - {train_end: "2014-12-31", evaluate_end: "2015-12-31"}
+    embargo_months: 0
+    embargo_months_robustness: 36
+
+  # Retained to reproduce the ICE Task 2 figures. Not the study's scheme.
+  legacy_out_of_time:
+    train_share: 0.70
+    validation_share: 0.15
+    test_share: 0.15
 
 # -----------------------------------------------------------------------------
 # Leakage control - Section 3.5.1

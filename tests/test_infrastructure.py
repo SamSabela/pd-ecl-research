@@ -33,8 +33,24 @@ class TestConfig:
         assert config["meta"]["student_number"] == "ST10517781"
 
     def test_partition_shares_sum_to_one(self):
-        p = load_config()["partition"]
+        """Retained to reproduce the ICE Task 2 figures; not the study's scheme."""
+        p = load_config()["partition"]["legacy_out_of_time"]
         assert p["train_share"] + p["validation_share"] + p["test_share"] == pytest.approx(1.0)
+    
+    def test_rolling_origin_folds_are_configured(self):
+        """Three folds and the two embargo settings Section 3.4.3 reports."""
+        rolling = load_config()["partition"]["rolling_origin"]
+        assert len(rolling["folds"]) == 3
+        assert rolling["embargo_months"] == 0
+        assert rolling["embargo_months_robustness"] == 36
+
+    def test_primary_term_scope_is_thirty_six_months(self):
+        """60-month loans default at roughly twice the rate and, because of the
+        maturity filter, exist only in cohorts to 2013, so term mix would be
+        confounded with calendar time."""
+        scope = load_config()["sample"]["term_scope"]
+        assert scope["primary_term_months"] == 36
+        assert scope["robustness_term_months"] == 60
 
     def test_methodological_constants(self):
         """Guards the numbers the methodology commits to in writing."""
@@ -82,7 +98,8 @@ class TestConfig:
         bad = tmp_path / "bad.yaml"
         bad.write_text(
             "meta: {}\nseed: 1\npaths: {}\nsample: {}\nleakage: {}\n"
-            "partition: {train_share: 0.5, validation_share: 0.3, test_share: 0.3}\n"
+            "partition: {legacy_out_of_time: "
+            "{train_share: 0.5, validation_share: 0.3, test_share: 0.3}}\n"
         )
         with pytest.raises(ValueError, match="must sum to 1.0"):
             load_config(bad)

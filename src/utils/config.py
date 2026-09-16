@@ -84,9 +84,22 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
         raise ValueError(f"config missing required sections: {sorted(missing)}")
 
     partition = config["partition"]
-    total = partition["train_share"] + partition["validation_share"] + partition["test_share"]
-    if not np.isclose(total, 1.0):
-        raise ValueError(f"partition shares must sum to 1.0, got {total}")
+
+    legacy = partition.get("legacy_out_of_time")
+    if legacy is not None:
+        total = legacy["train_share"] + legacy["validation_share"] + legacy["test_share"]
+        if not np.isclose(total, 1.0):
+            raise ValueError(f"partition shares must sum to 1.0, got {total}")
+
+    rolling = partition.get("rolling_origin")
+    if rolling is not None:
+        folds = rolling.get("folds") or []
+        if not folds:
+            raise ValueError("partition.rolling_origin.folds must not be empty")
+        for index, fold in enumerate(folds):
+            absent = {"train_end", "evaluate_end"} - set(fold)
+            if absent:
+                raise ValueError(f"fold {index} missing required keys: {sorted(absent)}")
 
     return config
 
