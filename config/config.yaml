@@ -113,25 +113,58 @@ feature_blocks:
 
 # -----------------------------------------------------------------------------
 # Macroeconomic panels - Section 3.5.3 / Table 3.6
+#
 # publication_lag_months is applied explicitly: a series is visible to an
-# observation only from (reference period end + lag).
+# observation only from (reference period end + lag). This controls look-ahead
+# in the macro dimension, in the same way the maturity filter and the fold
+# embargo control it in the outcome dimension.
+#
+# transform declares what is computed from the retrieved level, so the
+# transformation lives in tested code rather than in a vendor's definition:
+#   none      use the series as retrieved
+#   yoy_12m   12-month percentage change (monthly index or level)
+#   yoy_4q    4-quarter percentage change (quarterly level)
+#
+# Source note for the write-up. The South African macro series are retrieved
+# from FRED, which redistributes them from the OECD Main Economic Indicators
+# database and the IMF International Financial Statistics; the underlying
+# compilers are Stats SA and the SARB.
+#
+# Policy rate. The SARB repo rate is not available as a machine-readable
+# historical series: the Bank's site serves it through a JavaScript query tool,
+# and its web API exposes only the current value. The panel therefore carries
+# the interbank call money rate, which the SARB steers to the repo rate through
+# its corridor system and which represents the same policy stance. It is named
+# za_interbank_rate rather than repo_rate so that no reader mistakes one for the
+# other. scripts/build_repo_rate.py and src.data.macro.expand_step_series remain
+# in the repository: if the MPC decision list is transcribed from the statements
+# archive into data/external/sarb_mpc_decisions.csv, the true policy rate can be
+# substituted without any other change.
+#
+# Known limitation, to be stated in the methodology: FRED serves revised data.
+# Publication-lag alignment controls WHEN a figure became visible; it cannot
+# recover WHAT that figure said before later revision. Vintage series (ALFRED)
+# would be required for that and are out of scope.
 # -----------------------------------------------------------------------------
 macro:
   apply_publication_lag: true
+  cache_dir: "data/external/macro"
+
   za_series:
-    - {name: repo_rate,         frequency: monthly,   source: SARB,    publication_lag_months: 0}
-    - {name: cpi_yoy,           frequency: monthly,   source: StatsSA, publication_lag_months: 1}
-    - {name: gdp_growth_yoy,    frequency: quarterly, source: StatsSA, publication_lag_months: 3}
-    - {name: unemployment_qlfs, frequency: quarterly, source: StatsSA, publication_lag_months: 3}
-    - {name: usdzar,            frequency: daily,     source: FRED, series_id: DEXSFUS,        publication_lag_months: 0}
-    - {name: za_10y_yield,      frequency: monthly,   source: FRED, series_id: IRLTLT01ZAM156N, publication_lag_months: 0}
+    - {name: za_interbank_rate, frequency: monthly,   source: FRED,  series_id: IRSTCI01ZAM156N, transform: none,    publication_lag_months: 0}
+    - {name: cpi_yoy,           frequency: monthly,   source: FRED,  series_id: ZAFCPIALLMINMEI, transform: yoy_12m, publication_lag_months: 1}
+    - {name: gdp_growth_yoy,    frequency: quarterly, source: FRED,  series_id: NGDPRSAXDCZAQ,   transform: yoy_4q,  publication_lag_months: 3}
+    - {name: unemployment_qlfs, frequency: quarterly, source: FRED,  series_id: LRUNTTTTZAQ156S, transform: none,    publication_lag_months: 3}
+    - {name: usdzar,            frequency: daily,     source: FRED,  series_id: DEXSFUS,         transform: none,    publication_lag_months: 0}
+    - {name: za_10y_yield,      frequency: monthly,   source: FRED,  series_id: IRLTLT01ZAM156N, transform: none,    publication_lag_months: 0}
+
   us_series:
-    - {name: fed_funds_rate,    frequency: monthly,   source: FRED, series_id: FEDFUNDS, publication_lag_months: 0}
-    - {name: cpi_yoy,           frequency: monthly,   source: FRED, series_id: CPIAUCSL, publication_lag_months: 1}
-    - {name: gdp_growth_yoy,    frequency: quarterly, source: FRED, series_id: GDPC1,    publication_lag_months: 3}
-    - {name: unemployment,      frequency: monthly,   source: FRED, series_id: UNRATE,   publication_lag_months: 1}
-    - {name: usd_index,         frequency: daily,     source: FRED, series_id: DTWEXBGS, publication_lag_months: 0}
-    - {name: us_10y_yield,      frequency: monthly,   source: FRED, series_id: GS10,     publication_lag_months: 0}
+    - {name: fed_funds_rate,    frequency: monthly,   source: FRED,  series_id: FEDFUNDS, transform: none,    publication_lag_months: 0}
+    - {name: cpi_yoy,           frequency: monthly,   source: FRED,  series_id: CPIAUCSL, transform: yoy_12m, publication_lag_months: 1}
+    - {name: gdp_growth_yoy,    frequency: quarterly, source: FRED,  series_id: GDPC1,    transform: yoy_4q,  publication_lag_months: 3}
+    - {name: unemployment,      frequency: monthly,   source: FRED,  series_id: UNRATE,   transform: none,    publication_lag_months: 1}
+    - {name: usd_index,         frequency: daily,     source: FRED,  series_id: DTWEXBGS, transform: none,    publication_lag_months: 0}
+    - {name: us_10y_yield,      frequency: monthly,   source: FRED,  series_id: GS10,     transform: none,    publication_lag_months: 0}
 
 # -----------------------------------------------------------------------------
 # Models - Section 3.6. Equal budget across families is what makes it fair.
