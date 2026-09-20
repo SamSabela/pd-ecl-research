@@ -26,7 +26,6 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-
 from src.data.macro import read_fred_csv, series_specs
 from src.data.provenance import log_retrieval
 from src.utils.config import load_config, resolve_path
@@ -114,9 +113,9 @@ def main() -> None:
     print("Macroeconomic panel retrieval")
     print("=" * 78)
     print(f"  Cache directory : {cache.relative_to(resolve_path('.'))}")
-    print(f"  Publication lag : {'applied' if config['macro']['apply_publication_lag'] else 'NOT applied'}")
-    print()
-
+    print(f"  Publication lag : {'applied' if config['macro']['apply_publication_lag'] else 'NOT applied'}")  # noqa: E501
+    lag_state = "applied" if config["macro"]["apply_publication_lag"] else "NOT applied"
+    print(f"  Publication lag : {lag_state}")
     for panel in panels:
         print(f"{panel.upper()} panel")
         print("-" * 78)
