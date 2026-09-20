@@ -200,7 +200,11 @@ def read_fred_csv(path: str | Path, value_name: str) -> pd.DataFrame:
             value_name: pd.to_numeric(frame[value_col], errors="coerce"),
         }
     )
-    return out.dropna(subset=["reference_date"]).sort_values("reference_date").reset_index(drop=True)
+    return (
+        out.dropna(subset=["reference_date"])
+        .sort_values("reference_date")
+        .reset_index(drop=True)
+    )
 
 
 def apply_transform(frame: pd.DataFrame, value_name: str, transform: str) -> pd.DataFrame:
@@ -361,10 +365,17 @@ def attach_macro(
     `available_from` is on or before its origination date. A loan originated
     the day before a release takes the previous figure.
 
-    Row order is preserved. `merge_asof` requires both sides sorted by the key,
-    so the loans are sorted internally and restored to their original order
-    before returning - otherwise attaching macro data would silently reorder
-    the sample and break alignment with anything computed from it earlier.
+    Row order AND index labels are preserved. `merge_asof` requires both sides
+    sorted by the key and discards the index, so the loans are sorted
+    internally, then restored to their original order and their original index
+    before returning.
+
+    Preserving the index matters as much as preserving the order. A filtered
+    sample - 36-month loans only, say - has a sparse index, and silently
+    renumbering it would break every fold assignment computed against the
+    original labels. The failure would be invisible: the frame would have the
+    right length and the right order, and every `.loc` lookup afterwards would
+    quietly select the wrong rows.
 
     Args:
         loans: The analysis sample.
@@ -387,6 +398,7 @@ def attach_macro(
 
     left = loans.copy()
     left["_original_order"] = range(len(left))
+    left["_original_index"] = left.index
     left[origination_col] = pd.to_datetime(left[origination_col])
     left = left.sort_values(origination_col)
 
@@ -402,8 +414,12 @@ def attach_macro(
         direction="backward",
     )
 
-    merged = merged.sort_values("_original_order").reset_index(drop=True)
-    return merged.drop(columns=["_original_order", "available_from"])
+    merged = merged.sort_values("_original_order")
+    merged.index = merged["_original_index"].to_numpy()
+    merged.index.name = loans.index.name
+    return merged.drop(
+        columns=["_original_order", "_original_index", "available_from"]
+    )
 
 
 def expand_step_series(

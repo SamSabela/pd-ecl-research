@@ -14,10 +14,10 @@ import pytest
 
 from src.data.macro import (
     add_available_from,
-    expand_step_series,
     apply_transform,
     attach_macro,
     build_panel,
+    expand_step_series,
     read_fred_csv,
     series_specs,
 )
@@ -450,3 +450,48 @@ class TestExpandStepSeries:
                 "2013-01-01",
                 "2013-12-01",
             )
+
+
+class TestIndexPreservation:
+    """A filtered sample has a sparse index, and fold assignments are index
+    labels. Silently renumbering would break every `.loc` lookup downstream
+    while leaving length and order correct — an invisible failure."""
+
+    def _panel(self):
+        return pd.DataFrame(
+            {
+                "available_from": pd.to_datetime(["2013-03-31", "2013-06-30"]),
+                "gdp_growth_yoy": [1.0, 2.0],
+            }
+        )
+
+    def test_sparse_index_preserved(self):
+        loans = pd.DataFrame(
+            {"issue_d": pd.to_datetime(["2013-07-01", "2013-04-01", "2013-08-01"])},
+            index=[17, 4, 92],
+        )
+        out = attach_macro(loans, self._panel())
+        assert out.index.tolist() == [17, 4, 92]
+
+    def test_values_follow_their_rows(self):
+        loans = pd.DataFrame(
+            {"issue_d": pd.to_datetime(["2013-07-01", "2013-04-01", "2013-08-01"])},
+            index=[17, 4, 92],
+        )
+        out = attach_macro(loans, self._panel())
+        assert out.loc[4, "gdp_growth_yoy"] == 1.0
+        assert out.loc[17, "gdp_growth_yoy"] == 2.0
+        assert out.loc[92, "gdp_growth_yoy"] == 2.0
+
+    def test_index_name_preserved(self):
+        loans = pd.DataFrame(
+            {"issue_d": pd.to_datetime(["2013-07-01"])},
+            index=pd.Index([5], name="loan_id"),
+        )
+        assert attach_macro(loans, self._panel()).index.name == "loan_id"
+
+    def test_helper_columns_removed(self):
+        loans = pd.DataFrame({"issue_d": pd.to_datetime(["2013-07-01"])}, index=[3])
+        out = attach_macro(loans, self._panel())
+        assert "_original_index" not in out.columns
+        assert "_original_order" not in out.columns
