@@ -1,0 +1,61 @@
+arm,fold,model,auc
+A  borrower only,2013,Logistic Regression,0.5728609447277713
+A  borrower only,2013,Random Forest,0.5841859472443599
+A  borrower only,2013,XGBoost,0.5786655564864346
+A  borrower only,2013,LightGBM,0.5734871147542902
+A  borrower only,2013,CatBoost,0.5807253938139113
+A  borrower only,2014,Logistic Regression,0.6023762245159346
+A  borrower only,2014,Random Forest,0.6130373682460661
+A  borrower only,2014,XGBoost,0.6060738854766573
+A  borrower only,2014,LightGBM,0.5977559068593516
+A  borrower only,2014,CatBoost,0.6100213901709214
+A  borrower only,2015,Logistic Regression,0.6224975370353932
+A  borrower only,2015,Random Forest,0.6373958536738065
+A  borrower only,2015,XGBoost,0.6271356926823575
+A  borrower only,2015,LightGBM,0.6233311707979362
+A  borrower only,2015,CatBoost,0.6340144370807621
+A + month index,2013,Logistic Regression,0.5732282904142019
+A + month index,2013,Random Forest,0.5943777475970662
+A + month index,2013,XGBoost,0.6003030966082493
+A + month index,2013,LightGBM,0.5898100805279729
+A + month index,2013,CatBoost,0.6009363348481901
+A + month index,2014,Logistic Regression,0.6032706973749112
+A + month index,2014,Random Forest,0.6136880556048112
+A + month index,2014,XGBoost,0.6073497731832882
+A + month index,2014,LightGBM,0.5920793642941561
+A + month index,2014,CatBoost,0.6164211390103265
+A + month index,2015,Logistic Regression,0.6228543395817983
+A + month index,2015,Random Forest,0.6358091927217306
+A + month index,2015,XGBoost,0.630284472315529
+A + month index,2015,LightGBM,0.622996070979946
+A + month index,2015,CatBoost,0.6330254972030509
+C  SA macro,2013,Logistic Regression,0.5731168034095733
+C  SA macro,2013,Random Forest,0.6047337960523697
+C  SA macro,2013,XGBoost,0.5953665289925874
+C  SA macro,2013,LightGBM,0.5868403857531567
+C  SA macro,2013,CatBoost,0.6003205469196541
+C  SA macro,2014,Logistic Regression,0.6032102331008388
+C  SA macro,2014,Random Forest,0.6125095159529577
+C  SA macro,2014,XGBoost,0.6091980743150901
+C  SA macro,2014,LightGBM,0.5995519412310791
+C  SA macro,2014,CatBoost,0.610340558835998
+C  SA macro,2015,Logistic Regression,0.6222933894973778
+C  SA macro,2015,Random Forest,0.6354016776959606
+C  SA macro,2015,XGBoost,0.6254707307245446
+C  SA macro,2015,LightGBM,0.6242830400604862
+C  SA macro,2015,CatBoost,0.6325065923400333
+C  minus usdzar,2013,Logistic Regression,0.5730629233078051
+C  minus usdzar,2013,Random Forest,0.5955884262072904
+C  minus usdzar,2013,XGBoost,0.5918001202801998
+C  minus usdzar,2013,LightGBM,0.5863985201027477
+C  minus usdzar,2013,CatBoost,0.5925889362931748
+C  minus usdzar,2014,Logistic Regression,0.6028741760839842
+C  minus usdzar,2014,Random Forest,0.6163577740627082
+C  minus usdzar,2014,XGBoost,0.6012798469175407
+C  minus usdzar,2014,LightGBM,0.5966240358289816
+C  minus usdzar,2014,CatBoost,0.6101145721319207
+C  minus usdzar,2015,Logistic Regression,0.6227512148583751
+C  minus usdzar,2015,Random Forest,0.6352307812659214
+C  minus usdzar,2015,XGBoost,0.6308134594537906
+C  minus usdzar,2015,LightGBM,0.6265136180191208
+C  minus usdzar,2015,CatBoost,0.6328878811439571
