@@ -73,6 +73,34 @@ MODEL_DASHES = {
     "LightGBM": (8, 2, 2, 2),
     "CatBoost": (1, 2),
 }
+KIND_COLOURS = {
+    "Borrower": "#2a78d6",
+    "US macro": "#eb6834",
+    "South African macro": "#1baf7a",
+}
+
+CONTROL_ARM = "A  borrower only"
+
+# Two hues, not three. "C minus usdzar" is the same entity as block C with a
+# component removed, so it shares block C's hue and is separated by texture.
+# Validated: worst all-pairs CVD separation 9.1 dE (protan), above the 8 target.
+ARM_STYLES = {
+    "A + month index": {
+        "colour": "#eda100",
+        "hatch": None,
+        "label": "Origination month index (placebo, no economic content)",
+    },
+    "C  SA macro": {
+        "colour": "#1baf7a",
+        "hatch": None,
+        "label": "Block C, six South African macroeconomic series",
+    },
+    "C  minus usdzar": {
+        "colour": "#1baf7a",
+        "hatch": "///",
+        "label": "Block C with usdzar removed",
+    },
+}
 BLOCK_COLOURS = {"A": "#2a78d6", "B": "#eb6834", "C": "#1baf7a"}
 BLOCK_MARKERS = {"A": "o", "B": "s", "C": "^"}
 
@@ -289,47 +317,88 @@ def figure_3(results: pd.DataFrame, path) -> None:
     plt.close(fig)
 
 
-def figure_4(config: dict, path) -> None:
-    """How much of each feature's variation survives inside one evaluation year.
+def _retention(frame, column: str, folds: list) -> float | None:
+    """Mean over folds of within-evaluation-year sd as a share of full-period sd."""
+    overall = frame[column].std()
+    if not overall or not np.isfinite(overall):
+        return None
+    shares = [frame.loc[fold.evaluate, column].std() / overall for fold in folds]
+    return float(np.mean(shares))
 
-    This is the explanation for Figure 3's null discrimination result. AUC
-    ranks loans within the evaluation set; a feature that is nearly constant
-    across that set cannot change the ranking, however well it predicts the
-    level.
+
+def figure_4(config: dict, path) -> None:
+    """How much cross-sectional variation each feature keeps inside one year.
+
+    The claim this figure supports has to be worded carefully, because the
+    obvious wording is false. A low value does NOT mean the feature cannot rank
+    loans within the evaluation year. AUC is rank-based and scale-free, so a
+    series that moves only slightly but moves monotonically with time still
+    orders every loan in that year.
+
+    What a low value does mean is that the feature carries almost no
+    cross-sectional information: two borrowers originated on the same day
+    receive the same value, so it cannot separate them. A macroeconomic series
+    can therefore contribute to AUC only as a proxy for origination date, never
+    as a borrower-level discriminator. Figure 5 measures that proxy directly.
     """
-    sample_path = resolve_path(config["paths"]["data_processed"]) / "analysis_sample_v1.parquet"
+    sample_path = (
+        resolve_path(config["paths"]["data_processed"]) / "analysis_sample_v1.parquet"
+    )
     sample = pd.read_parquet(sample_path)
     term = config["sample"]["term_scope"]["primary_term_months"]
     sample = sample.loc[sample["term_months"] == term].copy()
     sample["issue_d"] = pd.to_datetime(sample["issue_d"])
 
-    frame, macro_columns = assemble_block(sample, config, "B")
-    frame["year"] = frame["issue_d"].dt.year
+    rolling = config["partition"]["rolling_origin"]
+    boundaries = [(f["train_end"], f["evaluate_end"]) for f in rolling["folds"]]
 
-    borrower = [c for c in ("fico_range_low", "dti", "annual_inc", "loan_amnt", "open_acc")
-                if c in frame.columns]
+    # Evaluation windows do not depend on the embargo - the embargo moves the
+    # training cut-off only - so the folds computed once here are the correct
+    # evaluation cohorts for every block. Every assembled frame carries the
+    # sample's index unchanged, so these index labels apply across all of them.
+    frame_a, _ = assemble_block(sample, config, "A")
+    folds = rolling_origin_folds(frame_a, boundaries, embargo_months=0).folds
 
-    rows = []
-    for column, kind in [(c, "Macroeconomic") for c in macro_columns] + [
-        (c, "Borrower") for c in borrower
-    ]:
-        overall = frame[column].std()
-        within = frame.loc[frame["year"] == 2015, column].std()
-        if overall and np.isfinite(overall):
-            rows.append({"feature": column, "kind": kind, "retained": within / overall})
+    records = []
+    borrower = [
+        c for c in ("fico_range_low", "dti", "annual_inc", "loan_amnt", "open_acc")
+        if c in frame_a.columns
+    ]
+    for column in borrower:
+        value = _retention(frame_a, column, folds)
+        if value is not None:
+            records.append({"feature": column, "kind": "Borrower", "retained": value})
 
-    table = pd.DataFrame(rows).sort_values("retained")
+    panels = {}
+    for label, block in (("US", "B"), ("South African", "C")):
+        panels[label] = assemble_block(sample, config, block)
 
-    fig, ax = plt.subplots(figsize=(8.2, 0.42 * len(table) + 1.6))
+    # cpi_yoy and gdp_growth_yoy appear in both panels under the same name.
+    # Drawing them on one label would put two different series on one bar, so
+    # any name carried by both panels gets the panel appended to it.
+    shared = set(panels["US"][1]) & set(panels["South African"][1])
+    suffixes = {"US": "US", "South African": "ZA"}
+    for label, (frame, macro_columns) in panels.items():
+        for column in macro_columns:
+            value = _retention(frame, column, folds)
+            if value is None:
+                continue
+            name = f"{column} ({suffixes[label]})" if column in shared else column
+            records.append(
+                {"feature": name, "kind": f"{label} macro", "retained": value}
+            )
+
+    table = pd.DataFrame(records).sort_values("retained")
+
+    fig, ax = plt.subplots(figsize=(8.6, 0.40 * len(table) + 2.1))
     fig.patch.set_facecolor(SURFACE)
     style(ax)
     ax.grid(axis="y", visible=False)
 
-    colours = {"Macroeconomic": "#eb6834", "Borrower": "#2a78d6"}
     positions = range(len(table))
     ax.barh(
         list(positions), table["retained"], height=0.62,
-        color=[colours[k] for k in table["kind"]],
+        color=[KIND_COLOURS[k] for k in table["kind"]],
         edgecolor=SURFACE, linewidth=1.5, zorder=3,
     )
     for pos, value in enumerate(table["retained"]):
@@ -342,28 +411,110 @@ def figure_4(config: dict, path) -> None:
     ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
     ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
     ax.set_xlabel(
-        "Standard deviation within 2015 as a share of standard deviation across 2007-2015",
+        "Standard deviation within the evaluation year as a share of standard "
+        "deviation across 2007-2015,\naveraged over the three folds",
         fontsize=9, color=MUTED,
     )
 
     handles = [
-        plt.Rectangle((0, 0), 1, 1, color=colours["Borrower"]),
-        plt.Rectangle((0, 0), 1, 1, color=colours["Macroeconomic"]),
+        plt.Rectangle((0, 0), 1, 1, color=KIND_COLOURS[kind])
+        for kind in ("Borrower", "US macro", "South African macro")
     ]
-    ax.legend(handles, ["Borrower feature", "Macroeconomic feature"],
-              loc="lower right", fontsize=8, frameon=False, labelcolor=MUTED)
+    ax.legend(
+        handles, ["Borrower feature", "US macroeconomic", "South African macroeconomic"],
+        loc="lower right", fontsize=8, frameon=False, labelcolor=MUTED,
+    )
     fig.suptitle(
-        "Figure 4. Variation surviving within a single evaluation year",
-        fontsize=11, color=INK, x=0.02, ha="left", y=0.99,
+        "Figure 4. Cross-sectional variation surviving within a single evaluation year",
+        fontsize=11, color=INK, x=0.02, ha="left", y=0.995,
+    )
+    fig.text(
+        0.02, 0.955,
+        "A low share means the series is near-constant within the year, so it cannot "
+        "separate two borrowers\noriginated on the same day. It does not prevent the "
+        "series ordering loans by origination date - see Figure 5.",
+        fontsize=8.5, color=MUTED, ha="left", va="top",
     )
     fig.savefig(path, dpi=200, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
     plt.close(fig)
+    
+def figure_5(diagnostic: pd.DataFrame, path) -> None:
+    """Does the block C gain survive a placebo that carries no economic content?
+
+    At embargo 36 the South African panel appears to add roughly +0.006 AUC to
+    every tree model. This figure sets that against a bare count of months since
+    the first origination in the sample - a feature that knows nothing except
+    when the loan was written.
+    """
+    pivot = diagnostic.pivot_table(
+        index="model", columns="arm", values="auc", aggfunc="mean"
+    )
+    deltas = pivot.drop(columns=[CONTROL_ARM]).sub(pivot[CONTROL_ARM], axis=0)
+    deltas = deltas[list(ARM_STYLES)]
+    deltas = deltas.loc[deltas.mean(axis=1).sort_values().index]
+
+    models = list(deltas.index)
+    count = len(ARM_STYLES)
+    band = 0.26
+
+    fig, ax = plt.subplots(figsize=(8.8, 0.95 * len(models) + 2.3))
+    fig.patch.set_facecolor(SURFACE)
+    style(ax)
+    ax.grid(axis="y", visible=False)
+
+    for offset, (arm, spec) in enumerate(ARM_STYLES.items()):
+        centres = [
+            index + ((count - 1) / 2 - offset) * band for index in range(len(models))
+        ]
+        ax.barh(
+            centres, deltas[arm], height=band * 0.86,
+            color=spec["colour"], hatch=spec["hatch"],
+            edgecolor=SURFACE, linewidth=1.5, zorder=3,
+        )
+        for centre, value in zip(centres, deltas[arm], strict=True):
+            ax.text(
+                value + 0.00022, centre, f"{value:+.4f}",
+                va="center", fontsize=7.5, color=MUTED,
+            )
+
+    ax.axvline(0.0, color="#9a9994", linewidth=1.2, zorder=4)
+    ax.set_yticks(range(len(models)))
+    ax.set_yticklabels(models, fontsize=9, color=INK)
+    ax.set_xlim(min(0.0, float(deltas.min().min())) - 0.0006,
+                float(deltas.max().max()) + 0.0022)
+    ax.set_xlabel(
+        "Change in mean AUC against the borrower-only control, embargo 36 months",
+        fontsize=9, color=MUTED,
+    )
+
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, facecolor=spec["colour"], hatch=spec["hatch"],
+                      edgecolor=SURFACE, linewidth=1.5)
+        for spec in ARM_STYLES.values()
+    ]
+    ax.legend(
+        handles, [spec["label"] for spec in ARM_STYLES.values()],
+        loc="lower right", fontsize=8, frameon=False, labelcolor=MUTED,
+    )
+    fig.suptitle(
+        "Figure 5. A date stamp reproduces the South African panel's apparent gain",
+        fontsize=11, color=INK, x=0.02, ha="left", y=0.995,
+    )
+    fig.text(
+        0.02, 0.955,
+        "Logistic regression gains nothing from any arm. Only models that can "
+        "partition the timeline benefit,\nwhich is the signature of a temporal proxy "
+        "rather than a macroeconomic relationship.",
+        fontsize=8.5, color=MUTED, ha="left", va="top",
+    )
+    fig.savefig(path, dpi=200, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
+    plt.close(fig)    
 
 
 def main() -> None:
     """Build the requested figures."""
     parser = argparse.ArgumentParser(description="Build the results figures")
-    parser.add_argument("--figures", default="1,2,3,4", help="Comma-separated figure numbers")
+    parser.add_argument("--figures", default="1,2,3,4,5", help="Comma-separated figure numbers")
     args = parser.parse_args()
     wanted = {int(n) for n in args.figures.split(",") if n.strip()}
 
@@ -400,7 +551,15 @@ def main() -> None:
     if 4 in wanted:
         figure_4(config, figures / "fig04_within_year_variation.png")
         print("  Figure 4  fig04_within_year_variation.png")
-
+    
+    if 5 in wanted:
+        diagnostic_path = tables / "macro_clock_diagnostic_embargo36.csv"
+        if not diagnostic_path.is_file():
+            raise SystemExit(
+                f"{diagnostic_path} not found. Run scripts.diagnose_macro_clock first."
+            )
+        figure_5(pd.read_csv(diagnostic_path), figures / "fig05_clock_placebo.png")
+        print("  Figure 5  fig05_clock_placebo.png")
     print("=" * 78)
 
 
