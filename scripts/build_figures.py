@@ -1,12 +1,14 @@
 """Produce the figures for the results and discussion chapters.
 
-Four figures, numbered and named as the supervisor requires. Each answers one
+Six figures, numbered and named as the supervisor requires. Each answers one
 question, and the order is the order the argument runs in:
 
     Figure 1  ROC curves by fold              do the families separate?
     Figure 2  Reliability diagrams by fold    do they predict the right level?
     Figure 3  Level error by fold and block   does macro conditioning help?
     Figure 4  Within-year feature variation   why AUC cannot answer Figure 3
+    Figure 5  Placebo against the SA panel    is the embargo gain a clock?
+    Figure 6  Provisioning error by family    what the PD level costs in money
 
 Figures 1 and 2 need per-loan predicted probabilities, which the results table
 does not carry, so block A is refitted here - fifteen fits, under a minute. The
@@ -101,6 +103,16 @@ ARM_STYLES = {
         "label": "Block C with usdzar removed",
     },
 }
+# Figure 6 reuses MODEL_COLOURS, already validated, and adds a marker per family
+# so the five series are separable without relying on colour alone.
+ECL_MODEL_MARKERS = {
+    "Logistic Regression": "o",
+    "Random Forest": "s",
+    "XGBoost": "^",
+    "LightGBM": "D",
+    "CatBoost": "v",
+}
+
 BLOCK_COLOURS = {"A": "#2a78d6", "B": "#eb6834", "C": "#1baf7a"}
 BLOCK_MARKERS = {"A": "o", "B": "s", "C": "^"}
 
@@ -511,10 +523,84 @@ def figure_5(diagnostic: pd.DataFrame, path) -> None:
     plt.close(fig)    
 
 
+
+def figure_6(ecl: pd.DataFrame, path) -> None:
+    """Provisioned ECL against realised loss, by fold and model family.
+
+    Deliberately reuses Figure 3's visual grammar - a dot plot of signed error
+    by fold, one marker per fitted cell, a zero rule in the middle - because
+    the reader has already been taught to read that form. Figure 3 shows
+    calibration level error by feature block; this shows provisioning error by
+    model family, so the two answer the same question at two levels of the
+    argument.
+
+    Block A only. Block B's apparent improvement is an artefact of the fold
+    mix, and putting it on these axes would invite exactly the misreading the
+    discussion warns against. It belongs in the text, with its caveat attached.
+    """
+    frame = ecl.loc[ecl["block"] == "A"].copy()
+    folds = sorted(frame["fold"].unique())
+    models = [m for m in MODEL_COLOURS if m in set(frame["model"])]
+
+    fig, ax = plt.subplots(figsize=(8.6, 0.95 * len(folds) + 2.4))
+    fig.patch.set_facecolor(SURFACE)
+    style(ax)
+    ax.grid(axis="y", visible=False)
+
+    spread = 0.10
+    for position, fold in enumerate(folds):
+        for offset, model in enumerate(models):
+            row = frame.loc[(frame["fold"] == fold) & (frame["model"] == model)]
+            if row.empty:
+                continue
+            value = float(row["ecl_error_pct_lgd45"].iloc[0])
+            ax.scatter(
+                value,
+                position + (offset - (len(models) - 1) / 2) * spread,
+                s=70, color=MODEL_COLOURS[model],
+                marker=ECL_MODEL_MARKERS.get(model, "o"),
+                edgecolor=SURFACE, linewidth=1.2, zorder=3,
+            )
+
+    ax.axvline(0.0, color="#4a4a48", linewidth=1.4, zorder=4)
+    ax.set_yticks(range(len(folds)))
+    ax.set_yticklabels([f"Fold {f}" for f in folds], fontsize=10, color=INK)
+    ax.set_ylim(-0.55, len(folds) - 0.25)
+    ax.set_xlabel(
+        "Provisioned ECL minus realised loss, as a share of realised loss     "
+        "(left = under-provides, right = over-provides)",
+        fontsize=9, color=MUTED,
+    )
+    ax.xaxis.set_major_formatter(lambda v, _: f"{v:+.0f}%")
+
+    handles = [
+        plt.Line2D([], [], linestyle="none", marker=ECL_MODEL_MARKERS.get(m, "o"),
+                   color=MODEL_COLOURS[m], markersize=8, label=m)
+        for m in models
+    ]
+    # Upper right: the only quadrant with no markers in it. Lower right
+    # collides with the 2013 cluster, which over-provides.
+    ax.legend(handles=handles, loc="upper right", fontsize=8, frameon=False,
+              labelcolor=MUTED, ncol=2)
+    fig.suptitle(
+        "Figure 6. Provisioning error by fold and model family, block A, LGD 45%",
+        fontsize=11, color=INK, x=0.02, ha="left", y=0.995,
+    )
+    fig.text(
+        0.02, 0.95,
+        "Every family under-provides in 2014 and 2015 and over-provides in 2013. "
+        "Model choice moves the size\nof the shortfall, not its direction, and the "
+        "sign reverses between folds exactly as Figure 3 shows.",
+        fontsize=8.5, color=MUTED, ha="left", va="top",
+    )
+    fig.savefig(path, dpi=200, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
+    plt.close(fig)
+
+
 def main() -> None:
     """Build the requested figures."""
     parser = argparse.ArgumentParser(description="Build the results figures")
-    parser.add_argument("--figures", default="1,2,3,4,5", help="Comma-separated figure numbers")
+    parser.add_argument("--figures", default="1,2,3,4,5,6", help="Comma-separated figure numbers")
     args = parser.parse_args()
     wanted = {int(n) for n in args.figures.split(",") if n.strip()}
 
@@ -560,6 +646,16 @@ def main() -> None:
             )
         figure_5(pd.read_csv(diagnostic_path), figures / "fig05_clock_placebo.png")
         print("  Figure 5  fig05_clock_placebo.png")
+
+    if 6 in wanted:
+        ecl_path = tables / "ecl_translation.csv"
+        if not ecl_path.is_file():
+            raise SystemExit(
+                f"{ecl_path} not found. Run scripts.ecl_translation first."
+            )
+        figure_6(pd.read_csv(ecl_path), figures / "fig06_provisioning_error.png")
+        print("  Figure 6  fig06_provisioning_error.png")
+
     print("=" * 78)
 
 
