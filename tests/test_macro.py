@@ -198,7 +198,7 @@ class TestAvailableFrom:
 
     def test_quarterly_period_end_plus_lag(self):
         """2013 Q1, dated 1 January, ends 31 March. With a three-month lag it
-        becomes available 30 June 2013 — after the quarter it describes, which
+        becomes available 30 June 2013, after the quarter it describes, which
         is the whole point."""
         frame = pd.DataFrame({"reference_date": [pd.Timestamp("2013-01-01")]})
         out = add_available_from(frame, "quarterly", 3)
@@ -455,7 +455,7 @@ class TestExpandStepSeries:
 class TestIndexPreservation:
     """A filtered sample has a sparse index, and fold assignments are index
     labels. Silently renumbering would break every `.loc` lookup downstream
-    while leaving length and order correct — an invisible failure."""
+    while leaving length and order correct, which is an invisible failure."""
 
     def _panel(self):
         return pd.DataFrame(

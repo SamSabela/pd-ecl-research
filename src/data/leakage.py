@@ -176,7 +176,7 @@ def enforce_register(
     """Apply the register and report what would be admitted.
 
     Nothing is dropped here. The report is produced so the exclusion can be
-    reviewed and signed off at Gate G1 before it is acted on — a silent drop
+    reviewed and signed off at Gate G1 before it is acted on, because a silent drop
     is not an auditable decision.
 
     Args:

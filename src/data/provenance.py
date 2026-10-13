@@ -46,6 +46,31 @@ class ProvenanceRecord:
     platform: str = ""
 
 
+def _repository_relative(path: Path) -> str:
+    """Express a path relative to the repository root.
+
+    An absolute path recorded in a provenance log discloses the username and
+    directory layout of whoever ran the pipeline, and it is meaningless on any
+    other machine. The repository root is located by walking upwards for the
+    project marker file. Where no root can be found the bare filename is
+    recorded, so that an absolute path is never written.
+
+    Args:
+        path: The path to express.
+
+    Returns:
+        A POSIX-style path relative to the repository root, or the filename.
+    """
+    resolved = path.resolve()
+    for parent in (resolved, *resolved.parents):
+        if (parent / "pyproject.toml").is_file():
+            try:
+                return resolved.relative_to(parent).as_posix()
+            except ValueError:
+                break
+    return resolved.name
+
+
 def sha256_checksum(path: str | Path) -> str:
     """SHA-256 of a file, streamed so large datasets do not exhaust memory.
 
@@ -93,7 +118,7 @@ def log_retrieval(
     """
     file_path = Path(path)
     record = ProvenanceRecord(
-        path=str(file_path.resolve()),
+        path=_repository_relative(file_path),
         filename=file_path.name,
         retrieved_at_utc=datetime.now(UTC).isoformat(),
         size_bytes=file_path.stat().st_size,

@@ -243,7 +243,7 @@ class TestProvenance:
         assert records[0].sha256 == record.sha256
 
     def test_log_is_append_only(self, tmp_path):
-        """Provenance records must never be overwritten - that is the point."""
+        """Provenance records must never be overwritten, which is the point."""
         data = tmp_path / "data.csv"
         data.write_text("x")
         log = tmp_path / "provenance.jsonl"

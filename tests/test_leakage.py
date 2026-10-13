@@ -40,12 +40,12 @@ class TestClassification:
 
     def test_int_rate_is_operational_not_a_feature(self, register):
         """int_rate is needed for ECL discounting and amortisation, so it stays
-        in the dataset — but it must never reach the modelling matrix."""
+        in the dataset, but it must never reach the modelling matrix."""
         assert classify_columns(["int_rate"], register)["int_rate"] is ColumnClass.OPERATIONAL
 
     def test_glob_catches_unlisted_hardship_field(self, register):
         """The register lists hardship_* as a pattern. A hardship field nobody
-        enumerated must still be caught — that is the point of the pattern."""
+        enumerated must still be caught, which is the point of the pattern."""
         c = classify_columns(["hardship_never_enumerated", "annual_inc"], register)
         assert c["hardship_never_enumerated"] is ColumnClass.POST_ORIGINATION
         assert c["annual_inc"] is ColumnClass.APPLICATION_TIME
