@@ -141,13 +141,21 @@ def build_models(seed: int) -> dict:
     return models
 
 
-def candidate_features(sample: pd.DataFrame, register: dict, engineered: list[str]) -> list[str]:
+def candidate_features(
+    sample: pd.DataFrame,
+    register: dict,
+    engineered: list[str],
+    drop: tuple[str, ...] | None = None,
+) -> list[str]:
     """Columns admitted by the leakage register, plus engineered features.
 
     Args:
         sample: The analysis sample after feature engineering.
         register: The parsed leakage register.
         engineered: Names of derived columns.
+
+        drop: Additional columns to withhold. Used to test whether a feature
+            is carrying signal it should not be - see the --drop flag.
 
     Returns:
         Sorted candidate feature names, excluding the outcome and any
@@ -156,7 +164,7 @@ def candidate_features(sample: pd.DataFrame, register: dict, engineered: list[st
     classification = classify_columns(sample.columns.tolist(), register)
     admitted = [c for c, k in classification.items() if k.value == "application_time"]
     admitted = [c for c in admitted if c != "default_flag"] + list(engineered)
-    return sorted(set(admitted) - {"partition", "term_months"})
+    return sorted(set(admitted) - {"partition", "term_months"} - set(drop or ()))
 
 
 def run_cell(
@@ -217,6 +225,13 @@ def main() -> None:
     parser.add_argument(
         "--all-terms", action="store_true", help="Ignore the 36-month term scope"
     )
+    parser.add_argument(
+        "--drop", default="",
+        help="Comma-separated features to withhold from every model, e.g. installment",
+    )
+    parser.add_argument(
+        "--tag", default="", help="Suffix for the output filename",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -252,7 +267,10 @@ def main() -> None:
               f"({len(sample) / before:.1%})")
     sample["issue_d"] = pd.to_datetime(sample["issue_d"])
     sample, engineered = engineer_features(sample)
-    candidates = candidate_features(sample, register, engineered)
+    drop = tuple(d.strip() for d in args.drop.split(",") if d.strip())
+    candidates = candidate_features(sample, register, engineered, drop=drop)
+    if drop:
+        print(f"  Features withheld : {', '.join(drop)}")
     print(f"  Borrower features admitted: {len(candidates)}")
     print()
 
@@ -323,6 +341,8 @@ def main() -> None:
     tables = resolve_path(config["paths"]["tables"])
     tables.mkdir(parents=True, exist_ok=True)
     suffix = "" if embargo == rolling["embargo_months"] else f"_embargo{embargo}"
+    if args.tag:
+        suffix += f"_{args.tag}"
     out_path = tables / f"experiment_results{suffix}.csv"
     results.to_csv(out_path, index=False)
 
