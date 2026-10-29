@@ -178,3 +178,16 @@ month-by-month evaluation is the planned correction.
 ## Author
 
 Kamogelo Samkelo Sabela (ST10517781), [github.com/SamSabela](https://github.com/SamSabela)
+
+---
+
+## Rights
+
+Copyright in this research output vests in The Independent Institute of Education,
+to which the work was submitted in partial fulfilment of the Postgraduate Diploma in
+Data Analytics. The repository is published for examination and portfolio purposes.
+The code may be read and cited; reuse requires permission from the institution.
+
+The Lending Club data is not redistributed here and remains subject to the terms of its
+own distribution. The macroeconomic series are public domain, published by the Federal
+Reserve Economic Database.
