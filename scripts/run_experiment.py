@@ -36,6 +36,10 @@ Run:
     python -m scripts.run_experiment --blocks A          one block only
     python -m scripts.run_experiment --sample 50000      subsample training rows
     python -m scripts.run_experiment --embargo 36        strict deployability
+    python -m scripts.run_experiment --save-predictions --tag repro
+                                                         keep every evaluation
+                                                         prediction for the paired
+                                                         significance tests
 """
 
 from __future__ import annotations
@@ -178,8 +182,17 @@ def run_cell(
     block: str,
     seed: int,
     replicates: int,
+    predictions: list[pd.DataFrame] | None = None,
+    eval_ids=None,
 ) -> dict:
     """Fit one model on one fold under one feature block, and score it.
+
+    Args:
+        predictions: When given, the per-loan evaluation probabilities are
+            appended to it, so that paired tests can later compare two models
+            on exactly the same borrowers.
+        eval_ids: Sample index labels of the evaluation rows, aligned to x_eval.
+            Required when predictions is given.
 
     Returns:
         A flat record suitable for a tidy results table.
@@ -189,6 +202,19 @@ def run_cell(
     elapsed = time.perf_counter() - started
 
     probabilities = model.predict_proba(x_eval)[:, 1]
+    if predictions is not None:
+        predictions.append(
+            pd.DataFrame(
+                {
+                    "block": block,
+                    "fold": fold_name,
+                    "model": model_name,
+                    "row_id": eval_ids,
+                    "y": y_eval.astype("int8"),
+                    "p": probabilities.astype("float64"),
+                }
+            )
+        )
     metrics = compute_metrics(y_eval, probabilities, model_name, fold_name, elapsed)
     low, high = bootstrap_auc_ci(y_eval, probabilities, replicates=replicates, seed=seed)
 
@@ -231,6 +257,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--tag", default="", help="Suffix for the output filename",
+    )
+    parser.add_argument(
+        "--save-predictions", action="store_true",
+        help="Write every evaluation probability to outputs/predictions/ for paired tests",
     )
     args = parser.parse_args()
 
@@ -279,6 +309,7 @@ def main() -> None:
     print()
 
     records: list[dict] = []
+    predictions: list[pd.DataFrame] | None = [] if args.save_predictions else None
     cache_dir = resolve_path(config["macro"]["cache_dir"])
 
     for block in blocks:
@@ -329,6 +360,7 @@ def main() -> None:
                 record = run_cell(
                     model_name, clone(prototype), x_train, y_train,
                     x_eval, y_eval, fold.name, block, seed, args.replicates,
+                    predictions=predictions, eval_ids=evaluate.index.to_numpy(),
                 )
                 records.append(record)
                 print(f"      {model_name:<22} AUC {record['auc']:.4f} "
@@ -345,6 +377,17 @@ def main() -> None:
         suffix += f"_{args.tag}"
     out_path = tables / f"experiment_results{suffix}.csv"
     results.to_csv(out_path, index=False)
+
+    if predictions is not None:
+        pred_dir = tables.parent / "predictions"
+        pred_dir.mkdir(parents=True, exist_ok=True)
+        pred_path = pred_dir / f"predictions{suffix}.parquet"
+        stacked = pd.concat(predictions, ignore_index=True)
+        for column in ("block", "fold", "model"):
+            stacked[column] = stacked[column].astype("category")
+        stacked.to_parquet(pred_path, index=False)
+        print(f"  {len(stacked):,} evaluation predictions written to "
+              f"{pred_path.relative_to(resolve_path('.'))}")
 
     print("=" * 78)
     print("MEAN AUC ACROSS FOLDS")
