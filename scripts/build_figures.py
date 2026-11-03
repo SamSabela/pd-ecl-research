@@ -1,6 +1,6 @@
 """Produce the figures for the results and discussion chapters.
 
-Six figures, numbered and named as the supervisor requires. Each answers one
+Seven figures, numbered and named as the supervisor requires. Each answers one
 question, and the order is the order the argument runs in:
 
     Figure 1  ROC curves by fold              do the families separate?
@@ -9,6 +9,7 @@ question, and the order is the order the argument runs in:
     Figure 4  Within-year feature variation   why AUC cannot answer Figure 3
     Figure 5  Placebo against the SA panel    is the embargo gain a clock?
     Figure 6  Provisioning error by family    what the PD level costs in money
+    Figure 7  SHAP against LR coefficients    do the two models reason alike?
 
 Figures 1 and 2 need per-loan predicted probabilities, which the results table
 does not carry, so block A is refitted here - fifteen fits, under a minute. The
@@ -597,10 +598,90 @@ def figure_6(ecl: pd.DataFrame, path) -> None:
     plt.close(fig)
 
 
+DIRECTION_COLOURS = {1.0: BLOCK_COLOURS["B"], -1.0: BLOCK_COLOURS["A"]}
+LEAK_PAIR = ("installment", "loan_amnt")
+
+
+def figure_7(importance: pd.DataFrame, path, fold: str = "2015", top: int = 10) -> None:
+    """XGBoost TreeSHAP importance against logistic regression coefficients.
+
+    One row per feature, sharing an axis across two panels, so a reader can
+    compare how the two models weigh the same input. Bars are coloured by the
+    direction in which the feature moves the predicted PD; matching colours
+    across a row mean the models agree on direction.
+
+    The ten features with the largest mean |SHAP| are shown, plus loan_amnt
+    wherever it falls, because the contrast for that one feature is the point:
+    logistic regression gives installment and loan_amnt its two largest
+    coefficients with opposite signs, which is how a linear model reconstructs
+    the contractual rate from their ratio (Section 5.5).
+    """
+    frame = importance.loc[importance["fold"].astype(str) == str(fold)].copy()
+    rows = frame.nsmallest(top, "rank_shap")
+    extra = frame[frame["feature"].isin(LEAK_PAIR) & ~frame["feature"].isin(rows["feature"])]
+    rows = pd.concat([rows, extra]).sort_values("rank_shap").reset_index(drop=True)
+    positions = np.arange(len(rows))[::-1]
+
+    fig, (left, right) = plt.subplots(
+        1, 2, figsize=(9.4, 0.42 * len(rows) + 2.2), sharey=True,
+        gridspec_kw={"wspace": 0.08},
+    )
+    fig.patch.set_facecolor(SURFACE)
+
+    panels = (
+        (left, rows["mean_abs_shap"], rows["shap_direction"], "XGBoost: mean |SHAP| (log-odds)"),
+        (right, rows["lr_coef_std"].abs(), rows["lr_direction"],
+         "Logistic regression: |standardised coefficient|"),
+    )
+    for ax, values, signs, label in panels:
+        style(ax)
+        ax.grid(axis="y", visible=False)
+        colours = [DIRECTION_COLOURS.get(s, MUTED) for s in signs.fillna(0)]
+        ax.barh(positions, values, color=colours, height=0.62, zorder=3)
+        for y, v in zip(positions, values, strict=True):
+            ax.text(v, y, f"  {v:.2f}", va="center", fontsize=7.5, color=MUTED)
+        ax.set_xlabel(label, fontsize=8.5, color=MUTED)
+        ax.set_xlim(0, values.max() * 1.22)
+
+    labels = []
+    for _, r in rows.iterrows():
+        name = r["feature"]
+        if r["rank_shap"] > top:
+            name += f"   (SHAP rank {int(r['rank_shap'])})"
+        labels.append(name)
+    left.set_yticks(positions)
+    left.set_yticklabels(labels, fontsize=8.5, color=INK)
+    for tick, (_, r) in zip(left.get_yticklabels(), rows.iterrows(), strict=True):
+        if r["feature"] in LEAK_PAIR:
+            tick.set_fontweight("bold")
+
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, color=DIRECTION_COLOURS[1.0], label="raises PD"),
+        plt.Rectangle((0, 0), 1, 1, color=DIRECTION_COLOURS[-1.0], label="lowers PD"),
+    ]
+    right.legend(handles=handles, loc="center right", fontsize=8, frameon=False,
+                 labelcolor=MUTED)
+
+    fig.suptitle(
+        f"Figure 7. Feature attribution, XGBoost against logistic regression, "
+        f"block A, fold {fold}",
+        fontsize=11, color=INK, x=0.02, ha="left", y=0.995,
+    )
+    fig.text(
+        0.02, 0.955,
+        "The two models agree on the direction of every leading feature. They disagree on "
+        "weight: logistic regression\nputs its two largest coefficients, with opposite signs, "
+        "on installment and loan_amnt, the pair whose ratio carries the excluded rate.",
+        fontsize=8.5, color=MUTED, ha="left", va="top",
+    )
+    fig.savefig(path, dpi=200, facecolor=SURFACE, bbox_inches="tight", pad_inches=0.25)
+    plt.close(fig)
+
+
 def main() -> None:
     """Build the requested figures."""
     parser = argparse.ArgumentParser(description="Build the results figures")
-    parser.add_argument("--figures", default="1,2,3,4,5,6", help="Comma-separated figure numbers")
+    parser.add_argument("--figures", default="1,2,3,4,5,6,7", help="Comma-separated figure numbers")
     args = parser.parse_args()
     wanted = {int(n) for n in args.figures.split(",") if n.strip()}
 
@@ -655,6 +736,15 @@ def main() -> None:
             )
         figure_6(pd.read_csv(ecl_path), figures / "fig06_provisioning_error.png")
         print("  Figure 6  fig06_provisioning_error.png")
+
+    if 7 in wanted:
+        shap_path = tables / "shap_importance.csv"
+        if not shap_path.is_file():
+            raise SystemExit(
+                f"{shap_path} not found. Run scripts.interpretability first."
+            )
+        figure_7(pd.read_csv(shap_path), figures / "fig07_feature_attribution.png")
+        print("  Figure 7  fig07_feature_attribution.png")
 
     print("=" * 78)
 

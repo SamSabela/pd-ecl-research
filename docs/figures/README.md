@@ -11,7 +11,9 @@ The live versions are regenerated with:
 
 Figure 5 additionally requires `outputs/tables/macro_clock_diagnostic_embargo36.csv`,
 which is produced by `python -m scripts.diagnose_macro_clock`. Figure 6 requires
-`outputs/tables/ecl_translation.csv`, produced by `python -m scripts.ecl_translation`.
+`outputs/tables/ecl_translation.csv`, produced by `python -m scripts.ecl_translation`, and
+Figure 7 requires `outputs/tables/shap_importance.csv`, produced by
+`python -m scripts.interpretability`.
 
 | File | Figure | Shows |
 |---|---|---|
@@ -21,6 +23,7 @@ which is produced by `python -m scripts.diagnose_macro_clock`. Figure 6 requires
 | `fig04_within_year_variation.png` | Figure 4 | Within-year variance retention, borrower features against both macroeconomic panels |
 | `fig05_clock_placebo.png` | Figure 5 | The placebo test, an origination-month counter against the South African panel, embargo 36 |
 | `fig06_provisioning_error.png` | Figure 6 | Provisioning error by fold and model family, block A, LGD 45% |
+| `fig07_feature_attribution.png` | Figure 7 | XGBoost TreeSHAP importance against logistic regression coefficients, block A, fold 2015 |
 
 ## How the figures carry the argument
 
@@ -56,3 +59,11 @@ zero rule, so that the two can be read against one another. Every family
 under-provisions in 2014 and 2015 and over-provides in 2013. Model choice moves
 the magnitude of the shortfall rather than its direction, and the sign reverses
 between folds exactly as Figure 3 shows.
+
+Figure 7 carries the interpretability argument of Research Objective 4. It sets the XGBoost
+TreeSHAP importance of each leading feature beside the magnitude of the corresponding logistic
+regression coefficient, coloured by the direction in which each feature moves the predicted
+probability of default. The two models agree on direction in every row. They disagree on weight
+in the one place that matters: logistic regression gives its two largest coefficients, with
+opposite signs, to installment and loan_amnt, the pair whose ratio carries the excluded
+contractual rate, whereas TreeSHAP ranks installment second and loan_amnt thirty-third.

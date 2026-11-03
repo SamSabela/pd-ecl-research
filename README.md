@@ -23,8 +23,10 @@ examination; this repository holds the code, configuration and results tables be
 **The margin by which machine learning outperforms logistic regression is narrower than the
 benchmark literature implies.** Across three rolling-origin folds on 618,584 thirty-six-month
 loans, the strongest gradient-boosting family attains a mean AUC of 0.6830 against 0.6758 for
-logistic regression. All three boosting implementations fall within 0.0025 AUC of one another,
-and the fold-level bootstrap intervals overlap in every fold. Random Forest ranks last on all
+logistic regression. All three boosting implementations fall within 0.0025 AUC of one another
+and cannot be consistently ranked against each other. Paired DeLong tests, Holm-corrected,
+show the advantage over logistic regression to be real, significant in eight of the nine
+boosting-against-logistic comparisons, but at 0.0072 AUC it is small. Random Forest ranks last on all
 three discrimination measures and worst on calibration.
 
 **Loan-level macroeconomic conditioning shifts the predicted level without improving the
@@ -60,6 +62,15 @@ the 0.90 screening threshold, whereas the ratio attains 0.6558. Withholding the 
 between 0.0014 and 0.0053 AUC and does not alter the ranking, so the exclusion holds in
 substance; screening features one at a time is nevertheless structurally blind to this class of
 leakage.
+
+**The interpretable model exposed the leak more plainly than the explanation of the complex
+one.** XGBoost and logistic regression agree on the direction of every one of their ten leading
+features in every fold, and the XGBoost TreeSHAP explanation is stable across folds, with rank
+correlations of 0.84 to 0.95. But logistic regression gives its two largest coefficients, with
+opposite signs and nearly equal magnitude, to `installment` and `loan_amnt`, which is how a
+linear model approximates their ratio. In the 2015 fold TreeSHAP ranks `installment`
+second and `loan_amnt` thirty-third, where a positive instalment effect reads as ordinary
+affordability.
 
 **The lender's own price constitutes a more demanding benchmark than logistic regression.** That
 same implied rate attains 0.6558 unaided, against 0.6830 for the best model fitted on 97
@@ -97,7 +108,10 @@ python -m scripts.run_experiment --embargo 36          # look-ahead robustness
 python -m scripts.diagnose_macro_clock                 # the temporal placebo
 python -m scripts.run_experiment --drop installment --tag no_installment
 python -m scripts.ecl_translation       # IFRS 9 ECL from the fitted probabilities
-python -m scripts.build_figures         # all six figures
+python -m scripts.run_experiment --save-predictions --tag repro
+python -m scripts.significance          # paired DeLong tests, Holm-corrected
+python -m scripts.interpretability      # TreeSHAP against logistic regression
+python -m scripts.build_figures         # all seven figures
 ```
 
 Each run reads its seed, partition boundaries, term scope and macroeconomic series definitions
@@ -117,7 +131,7 @@ ruff check .    # lint
 |---|---|
 | `src/data/` | Leakage register and classification, rolling-origin partitioning, macroeconomic panel construction with publication-lag alignment, retrieval provenance |
 | `src/features/` | Feature block assembly (A, B, C) and the fit-on-train preprocessing state |
-| `src/evaluation/` | Discrimination and calibration metrics, bootstrap intervals |
+| `src/evaluation/` | Discrimination and calibration metrics, bootstrap intervals, paired DeLong tests with Holm correction |
 | `src/ecl/` | Annuity amortisation and the IFRS 9 ECL provisioning computation |
 | `src/utils/` | Configuration loading, path resolution, seeding |
 | `scripts/` | Executable entry points, one for each pipeline stage |
@@ -165,11 +179,12 @@ feature semantics do not, and no claim is made to the contrary.
 
 ## Status and limitations
 
-This is coursework under examination rather than production code, and three matters remain
-outstanding. First, hyperparameters are fixed and untuned, so the comparison measures relative
-behaviour under an equal budget rather than the ceiling attainable by each family. Second, no
-paired significance testing has yet been conducted, and no AUC difference reported here should
-therefore be treated as established. Third, discrimination is measured over twelve-month
+This is coursework under examination rather than production code, and three matters qualify
+the results. First, hyperparameters are fixed and untuned, so the comparison measures relative
+behaviour under an equal budget rather than the ceiling attainable by each family. Second, paired significance tests
+have been run, but with evaluation cohorts of 100,000 to 283,000 loans they detect differences
+as small as 0.0008 AUC, so significance establishes that a difference is real rather than that
+it matters. Third, discrimination is measured over twelve-month
 origination cohorts, which the placebo shows to reward any feature that orders loans by date; a
 month-by-month evaluation is the planned correction.
 
